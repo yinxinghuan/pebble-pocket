@@ -88,6 +88,45 @@ export function playBell(freq: number, vol = 0.16) {
   trackVoice(1000);
 }
 
+// Global delegated tap feedback — per [feedback_global_tap_feedback_pattern.md].
+// One listener at app mount covers every button/role=button/anchor with a
+// soft pop + haptic. Opt-out via [data-no-feedback].
+let globalTapInstalled = false;
+export function installGlobalTapFeedback(): void {
+  if (globalTapInstalled || typeof window === 'undefined') return;
+  globalTapInstalled = true;
+  window.addEventListener('pointerdown', (e) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    const interactive = target.closest(
+      'button, [role="button"], a[href]',
+    ) as HTMLElement | null;
+    if (!interactive) return;
+    if ((interactive as HTMLButtonElement).disabled) return;
+    if (interactive.closest('[data-no-feedback]')) return;
+    playPop();
+    hapticTap();
+  }, true);
+}
+function playPop() {
+  if (!audioReady() || !actx || !master) return;
+  const t = actx.currentTime;
+  const o = actx.createOscillator();
+  const g = actx.createGain();
+  o.type = 'sine'; o.frequency.value = 380 + Math.random() * 60;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.06, t + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.10);
+  o.connect(g).connect(master);
+  o.start(t); o.stop(t + 0.12);
+  trackVoice(120);
+}
+function hapticTap() {
+  try {
+    if ('vibrate' in navigator) (navigator as Navigator & { vibrate: (n: number) => void }).vibrate(8);
+  } catch (_) { /* ignore */ }
+}
+
 // Soft tide — louder swell on tap during stone detail
 export function playSwell() {
   if (!audioReady() || !actx || !master) return;
