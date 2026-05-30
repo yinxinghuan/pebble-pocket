@@ -1,0 +1,487 @@
+@bg-deep: #1a1410;
+@bg-mid: #2c211a;
+@sand: #6e5a45;
+@sand-light: #8d7559;
+@sand-dark: #3f3127;
+@cream: #ece2d2;
+@cream-dim: rgba(236, 226, 210, 0.65);
+@cream-fade: rgba(236, 226, 210, 0.32);
+@warm: #d4a87a;
+
+@serif: 'Cormorant Garamond', Georgia, serif;
+@sans: 'Inter', system-ui, sans-serif;
+
+.pp {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 70%, lighten(@bg-mid, 4%) 0%, @bg-deep 80%);
+  color: @cream;
+
+  &--loading {
+    display: flex; align-items: center; justify-content: center;
+  }
+}
+
+.pp-spin {
+  width: 28px; height: 28px;
+  border: 2px solid rgba(236, 226, 210, 0.25);
+  border-top-color: @cream;
+  border-radius: 50%;
+  animation: pp-spin 1s linear infinite;
+}
+
+@keyframes pp-spin {
+  to { transform: rotate(360deg); }
+}
+
+.pp-wm {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  left: 18px;
+  width: 58px; height: auto;
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 4;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5));
+}
+
+// ─── Beach ────────────────────────────────────────────────────────────────
+.pp-beach {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 0 24px;
+  // Sandy texture overlay
+  background:
+    radial-gradient(ellipse at 50% 55%, fade(@sand, 18%) 0%, transparent 70%),
+    radial-gradient(ellipse at 50% 90%, fade(@sand-dark, 40%) 0%, transparent 60%);
+
+  &__title {
+    position: absolute;
+    top: max(22px, env(safe-area-inset-top));
+    left: 0; right: 0;
+    text-align: center;
+    font-family: @serif;
+    font-style: italic;
+    font-size: 26px;
+    color: fade(@cream, 78%);
+    letter-spacing: 0.02em;
+    pointer-events: none;
+  }
+
+  &__hint {
+    position: absolute;
+    bottom: 22%;
+    left: 0; right: 0;
+    text-align: center;
+    font-family: @sans;
+    font-size: 12px;
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+    color: fade(@cream, 50%);
+    animation: pp-hint-pulse 2.4s ease-in-out infinite;
+    pointer-events: none;
+  }
+  &__error {
+    position: absolute;
+    bottom: 12%;
+    left: 24px; right: 24px;
+    text-align: center;
+    font-family: @sans;
+    font-size: 13px;
+    color: #e07a6a;
+    background: rgba(40, 20, 16, 0.55);
+    padding: 8px 14px;
+    border: 1px solid rgba(224, 122, 106, 0.3);
+  }
+  &__pocket-btn {
+    position: absolute;
+    top: max(22px, env(safe-area-inset-top));
+    right: 18px;
+    background: transparent;
+    border: none;
+    color: fade(@cream, 55%);
+    font-family: @sans;
+    font-size: 12px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    cursor: pointer;
+    padding: 6px 10px;
+  }
+}
+
+@keyframes pp-hint-pulse {
+  0%, 100% { opacity: 0.32; }
+  50%      { opacity: 0.74; }
+}
+
+// Hole in sand — pressable target
+.pp-hole {
+  position: relative;
+  width: 220px; height: 220px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  touch-action: none;
+  // Hide default button focus ring
+  outline: none;
+
+  &__rim {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(
+      ellipse at 50% 48%,
+      transparent 38%,
+      fade(@sand-light, 22%) 45%,
+      fade(@sand, 35%) 55%,
+      transparent 75%
+    );
+  }
+  &__shadow {
+    position: absolute;
+    width: 120px; height: 120px;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(
+      ellipse at 50% 40%,
+      rgba(0,0,0,0.62) 0%,
+      rgba(0,0,0,0.32) 60%,
+      transparent 90%
+    );
+    box-shadow:
+      inset 0 4px 12px rgba(0,0,0,0.55),
+      inset 0 -2px 8px fade(@sand-light, 18%);
+    transition: transform 0.18s ease;
+  }
+  &__glow {
+    position: absolute;
+    width: 90px; height: 90px;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%) scale(0.5);
+    opacity: 0;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle at center,
+      fade(@warm, 70%) 0%,
+      fade(@warm, 20%) 50%,
+      transparent 80%
+    );
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    pointer-events: none;
+  }
+  &.is-pressing {
+    .pp-hole__shadow { transform: translate(-50%, -50%) scale(0.92); }
+    .pp-hole__glow   { opacity: 0.85; transform: translate(-50%, -50%) scale(1.0); }
+  }
+  &.is-demoing .pp-hole__glow {
+    animation: pp-hole-pulse 2.2s ease-in-out infinite;
+  }
+}
+@keyframes pp-hole-pulse {
+  0%, 100% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+  50%      { opacity: 0.55; transform: translate(-50%, -50%) scale(0.95); }
+}
+
+.pp-demo-finger {
+  position: absolute;
+  width: 56px; height: 56px;
+  top: 38%; left: 56%;
+  pointer-events: none;
+  animation: pp-demo-arc 4.4s ease-in-out infinite;
+  svg {
+    width: 100%; height: 100%;
+    fill: rgba(255, 220, 180, 0.92);
+    filter:
+      drop-shadow(0 0 8px rgba(255, 200, 140, 0.45))
+      drop-shadow(0 0 18px rgba(200, 130, 80, 0.4))
+      drop-shadow(0 2px 4px rgba(0,0,0,0.55));
+  }
+}
+@keyframes pp-demo-arc {
+  0%, 100% { transform: translate(0, 0); opacity: 0; }
+  10%      { opacity: 0.92; }
+  50%      { transform: translate(-25px, -10px); opacity: 0.92; }
+  90%      { opacity: 0.92; }
+}
+
+// ─── Generating ───────────────────────────────────────────────────────────
+.pp-gen {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 0 24px;
+  background:
+    radial-gradient(ellipse at 50% 55%, fade(@warm, 14%) 0%, transparent 70%),
+    radial-gradient(ellipse at 50% 90%, fade(@sand-dark, 40%) 0%, transparent 60%);
+
+  &__ripple {
+    position: relative;
+    width: 220px; height: 220px;
+  }
+  &__ripple-inner {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at center, fade(@warm, 35%) 0%, transparent 65%);
+    animation: pp-ripple-breathe 3s ease-in-out infinite;
+  }
+  &__ripple-pulse {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    border: 1px solid fade(@warm, 45%);
+    animation: pp-ripple-pulse 2.2s ease-out infinite;
+  }
+  &__msg {
+    margin-top: 30px;
+    font-family: @serif;
+    font-style: italic;
+    font-size: 18px;
+    color: fade(@cream, 75%);
+    text-align: center;
+  }
+}
+@keyframes pp-ripple-breathe {
+  0%, 100% { transform: scale(0.85); opacity: 0.6; }
+  50%      { transform: scale(1.05); opacity: 1; }
+}
+@keyframes pp-ripple-pulse {
+  0%   { transform: scale(0.4); opacity: 0.8; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+// ─── Reveal ───────────────────────────────────────────────────────────────
+.pp-reveal {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 0 24px;
+  background:
+    radial-gradient(ellipse at 50% 50%, fade(@warm, 14%) 0%, transparent 65%);
+  animation: pp-reveal-in 0.7s ease;
+
+  &__found {
+    position: absolute;
+    top: max(22%, env(safe-area-inset-top));
+    font-family: @serif;
+    font-style: italic;
+    font-size: 22px;
+    color: fade(@cream, 78%);
+    text-align: center;
+  }
+  &__stone {
+    width: 240px; height: 240px;
+    border-radius: 18px;
+    overflow: hidden;
+    background: @sand-dark;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.55), 0 0 60px fade(@warm, 22%);
+    img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    animation: pp-stone-rise 1s cubic-bezier(.16,1,.3,1);
+  }
+  &__kind {
+    margin-top: 22px;
+    font-family: @serif;
+    font-style: italic;
+    font-size: 17px;
+    color: @cream;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
+  }
+  &__sub {
+    margin-top: 14px;
+    font-family: @sans;
+    font-size: 11px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: fade(@cream, 50%);
+    animation: pp-hint-pulse 2s ease-in-out infinite;
+  }
+}
+@keyframes pp-reveal-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes pp-stone-rise {
+  from { transform: translateY(20px) scale(0.85); opacity: 0; }
+  to   { transform: translateY(0)   scale(1);   opacity: 1; }
+}
+
+// ─── Pocket ───────────────────────────────────────────────────────────────
+.pp-pocket {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  padding-top: max(22px, env(safe-area-inset-top));
+  padding-bottom: env(safe-area-inset-bottom);
+  background:
+    radial-gradient(ellipse at 50% 100%, fade(@sand-dark, 50%) 0%, transparent 70%);
+  &__header {
+    padding: 18px 24px 14px 72px;  // leave room for watermark
+    display: flex; align-items: baseline; justify-content: space-between;
+  }
+  &__title {
+    font-family: @serif;
+    font-style: italic;
+    font-size: 24px;
+    color: fade(@cream, 88%);
+  }
+  &__count {
+    font-family: @sans;
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: fade(@cream, 55%);
+  }
+  &__grid {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px 18px 4px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    align-content: start;
+    touch-action: pan-y;
+  }
+  &__footer {
+    padding: 14px 24px max(20px, env(safe-area-inset-bottom));
+    text-align: center;
+  }
+  &__countdown {
+    font-family: @sans;
+    font-size: 11px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: fade(@cream, 48%);
+  }
+  &__empty {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    font-family: @serif;
+    font-style: italic;
+    font-size: 18px;
+    color: fade(@cream, 65%);
+    gap: 6px;
+    text-align: center;
+    padding: 0 24px;
+  }
+  &__empty-sub {
+    font-family: @sans;
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: fade(@cream, 40%);
+    margin-top: 12px;
+  }
+  &__back {
+    margin-top: 24px;
+    background: fade(@warm, 12%);
+    border: 1px solid fade(@warm, 35%);
+    color: @warm;
+    font-family: @sans;
+    font-size: 12px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    padding: 10px 22px;
+    cursor: pointer;
+  }
+}
+
+.pp-stone-card {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex; flex-direction: column;
+  align-items: stretch;
+  font-family: @sans;
+  text-align: left;
+  touch-action: manipulation;
+  &__photo {
+    aspect-ratio: 1;
+    border-radius: 14px;
+    overflow: hidden;
+    background: @sand-dark;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.45);
+    img {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+      transition: transform 0.4s ease;
+    }
+  }
+  &__meta {
+    margin-top: 8px;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: fade(@cream, 55%);
+    text-align: center;
+  }
+  &.is-today &__photo {
+    box-shadow:
+      0 8px 16px rgba(0,0,0,0.45),
+      0 0 0 1px fade(@warm, 55%),
+      0 0 24px fade(@warm, 30%);
+  }
+  &.is-today &__meta {
+    color: @warm;
+    font-weight: 600;
+  }
+  &:active &__photo img {
+    transform: scale(1.03);
+  }
+}
+
+// ─── Detail ───────────────────────────────────────────────────────────────
+.pp-detail {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: rgba(10, 6, 4, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 40px 24px;
+  animation: pp-reveal-in 0.4s ease;
+  z-index: 8;
+  &__photo {
+    max-width: 86vw; max-height: 70vh;
+    border-radius: 18px;
+    overflow: hidden;
+    background: @sand-dark;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.7);
+    img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  }
+  &__meta {
+    margin-top: 22px;
+    text-align: center;
+  }
+  &__kind {
+    font-family: @serif;
+    font-style: italic;
+    font-size: 22px;
+    color: @cream;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
+  }
+  &__day {
+    margin-top: 8px;
+    font-family: @sans;
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: fade(@cream, 55%);
+  }
+  &__hint {
+    position: absolute;
+    bottom: max(28px, env(safe-area-inset-bottom));
+    font-family: @sans;
+    font-size: 10px;
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+    color: fade(@cream, 35%);
+    animation: pp-hint-pulse 2s ease-in-out infinite;
+  }
+}
