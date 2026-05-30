@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import './PebblePocket.less';
 import { usePebbles, Stone } from './hooks/usePebbles';
+import { useTide, TideEntry, isSelfEntry } from './hooks/useTide';
 import { initAudio, playBell, playSwell, installGlobalTapFeedback } from './utils/audio';
 import { dayKey, msUntilTomorrow, formatDay } from './utils/dayKey';
 import { t } from './i18n';
 
 type Phase = 'beach' | 'generating' | 'reveal' | 'pocket' | 'detail';
+type Tab = 'tide' | 'mine';
 
 // Specimen number = 1-indexed position in stones array. Permanent per stone.
 function specimenId(idx: number): string {
@@ -17,13 +19,40 @@ function bobDelay(ts: number): string {
   return `${(ts % 6000) / 1000}s`;
 }
 
+// Build a list of the last N day-keys ending today, newest first.
+function recentDays(n: number): string[] {
+  const today = new Date();
+  const out: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    out.push(`${y}-${m}-${day}`);
+  }
+  return out;
+}
+
+// Short "MM·DD" label for a YYYY-MM-DD day key
+function shortDay(k: string): string {
+  const [, m, d] = k.split('-');
+  return `${m}·${d}`;
+}
+
 export default function PebblePocket() {
   const pebbles = usePebbles();
+  const tide = useTide();
   const [phase, setPhase] = useState<Phase>('beach');
-  const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const [openStone, setOpenStone] = useState<{ stone: Stone; entry?: TideEntry; idx?: number } | null>(null);
   const [pressing, setPressing] = useState(false);
   const [demoActive, setDemoActive] = useState(true);
   const audioInitedRef = useRef(false);
+  // Tab + day picker live at the pocket level (not inside PocketView) so
+  // they survive navigating to detail and back without resetting.
+  const [tab, setTab] = useState<Tab>('tide'); // community-first per social-wall skill
+  const [selectedDay, setSelectedDay] = useState<string>(() => dayKey());
+
   // Install the delegated tap feedback listener once.
   useEffect(() => { installGlobalTapFeedback(); }, []);
 
@@ -32,6 +61,13 @@ export default function PebblePocket() {
     if (pebbles.todayDone) setPhase('pocket');
     else setPhase('beach');
   }, [pebbles.loaded, pebbles.todayDone]);
+
+  // When entering pocket, refresh the tide so new community entries land
+  // without a page reload.
+  useEffect(() => {
+    if (phase === 'pocket') tide.refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   const firstTouch = () => {
     if (!audioInitedRef.current) {
@@ -59,16 +95,27 @@ export default function PebblePocket() {
     pebbles.acceptFresh();
     playBell(659, 0.14);
     setPhase('pocket');
+    setTab('mine');
+    // Refresh tide so the user's just-published stone joins others.
+    tide.refresh();
   };
 
-  const openDetail = (idx: number) => {
+  const openOwnStone = (idx: number) => {
     firstTouch();
-    setOpenIdx(idx);
+    const stone = pebbles.stones[idx];
+    if (!stone) return;
+    setOpenStone({ stone, idx });
+    setPhase('detail');
+    playSwell();
+  };
+  const openTideStone = (entry: TideEntry) => {
+    firstTouch();
+    setOpenStone({ stone: entry.stone, entry });
     setPhase('detail');
     playSwell();
   };
   const closeDetail = () => {
-    setOpenIdx(null);
+    setOpenStone(null);
     setPhase('pocket');
   };
 
@@ -76,11 +123,34 @@ export default function PebblePocket() {
     return <div className="pp pp--loading"><div className="pp-spin" /></div>;
   }
 
-  // Newest-first for display, but specimen ID stays its archive position
-  // (oldest = №001, newest = №N) so the number is permanent.
   const stones = pebbles.stones;
-  const newestFirst = stones.map((s, i) => ({ stone: s, idx: i })).reverse();
   const total = stones.length;
+
+  // Optimistic merge for the TIDE tab — the player's own latest stone
+  // lives in pebbles.stones for ~1s before the cloud get/data/list catches
+  // up. Dedupe by stone.ts since the same stone appears as 'self' before
+  // sync and the real telegram_id after. See social-wall skill.
+  const mineAsTide: TideEntry[] = stones.map((s) => ({
+    userId: 'self',
+    userName: undefined,
+    userAvatarUrl: undefined,
+    stone: s,
+  }));
+  const tideMerged: TideEntry[] = (() => {
+    const seenTs = new Set(mineAsTide.map((e) => e.stone.ts));
+    return [
+      ...mineAsTide,
+      ...tide.entries.filter((e) => !seenTs.has(e.stone.ts)),
+    ].sort((a, b) => (b.stone.ts ?? 0) - (a.stone.ts ?? 0));
+  })();
+
+  // Days strip — last 14 days. Each carries a count for both tabs so the
+  // dots make the activity legible without opening each day.
+  const days = recentDays(14);
+  const mineDayCount = new Map<string, number>();
+  for (const s of stones) mineDayCount.set(s.day, (mineDayCount.get(s.day) ?? 0) + 1);
+  const tideDayCount = new Map<string, number>();
+  for (const e of tideMerged) tideDayCount.set(e.stone.day, (tideDayCount.get(e.stone.day) ?? 0) + 1);
 
   return (
     <div className="pp">
@@ -109,15 +179,30 @@ export default function PebblePocket() {
 
       {phase === 'pocket' && (
         <PocketView
-          stones={newestFirst}
-          onOpen={openDetail}
+          tab={tab}
+          onTab={setTab}
+          days={days}
+          selectedDay={selectedDay}
+          onSelectDay={setSelectedDay}
+          mineDayCount={mineDayCount}
+          tideDayCount={tideDayCount}
+          stones={stones}
+          tideEntries={tideMerged}
+          tideLoaded={tide.loaded}
+          onOpenOwn={openOwnStone}
+          onOpenTide={openTideStone}
           onGoBeach={() => { firstTouch(); setPhase('beach'); }}
           todayDone={pebbles.todayDone}
         />
       )}
 
-      {phase === 'detail' && openIdx != null && stones[openIdx] && (
-        <DetailView stone={stones[openIdx]} idx={openIdx} onClose={closeDetail} />
+      {phase === 'detail' && openStone && (
+        <DetailView
+          stone={openStone.stone}
+          idx={openStone.idx}
+          author={openStone.entry}
+          onClose={closeDetail}
+        />
       )}
     </div>
   );
@@ -143,7 +228,6 @@ function StatusStrip({ total, todayDone, phase }: { total: number; todayDone: bo
 
 function dayCodeShort(): string {
   const k = dayKey();
-  // YYYY-MM-DD → e.g. 05·30
   const [, m, d] = k.split('-');
   return `${m}·${d}`;
 }
@@ -221,12 +305,10 @@ function BeachView(props: BeachProps) {
         <div className="pp-beach__error">{t('gen.error')}</div>
       )}
 
-      {props.stones.length > 0 && (
-        <button className="pp-beach__pocket-btn" onPointerDown={(e) => { e.preventDefault(); props.onGoPocket(); }}>
-          {t('pocket.title')}
-          <span className="pp-beach__pocket-btn-arrow">→</span>
-        </button>
-      )}
+      <button className="pp-beach__pocket-btn" onPointerDown={(e) => { e.preventDefault(); props.onGoPocket(); }}>
+        {t('pocket.tab_tide')}
+        <span className="pp-beach__pocket-btn-arrow">→</span>
+      </button>
     </div>
   );
 }
@@ -285,67 +367,187 @@ function RevealView({ stone, idx, onKeep }: { stone: Stone; idx: number; onKeep:
 }
 
 // ─── Pocket view ───────────────────────────────────────────────────────────
-function PocketView({
-  stones, onOpen, onGoBeach, todayDone,
-}: {
-  stones: { stone: Stone; idx: number }[];
-  onOpen: (idx: number) => void;
+interface PocketProps {
+  tab: Tab;
+  onTab: (t: Tab) => void;
+  days: string[];
+  selectedDay: string;
+  onSelectDay: (d: string) => void;
+  mineDayCount: Map<string, number>;
+  tideDayCount: Map<string, number>;
+  stones: Stone[];
+  tideEntries: TideEntry[];
+  tideLoaded: boolean;
+  onOpenOwn: (idx: number) => void;
+  onOpenTide: (entry: TideEntry) => void;
   onGoBeach: () => void;
   todayDone: boolean;
-}) {
-  const total = stones.length;
-  const days = todayDone ? total : total + 1; // user's count of days they could pick (rough estimate)
+}
+function PocketView(props: PocketProps) {
+  const isToday = props.selectedDay === dayKey();
+
+  // Filter the active list by selected day.
+  const ownIndexByTs = useMemo(() => {
+    const m = new Map<number, number>();
+    props.stones.forEach((s, i) => m.set(s.ts, i));
+    return m;
+  }, [props.stones]);
+
+  const mineToday = props.stones
+    .map((s, i) => ({ stone: s, idx: i }))
+    .filter(({ stone }) => stone.day === props.selectedDay)
+    .reverse(); // newest first within day
+
+  const tideToday = props.tideEntries.filter((e) => e.stone.day === props.selectedDay);
+
   return (
     <div className="pp-pocket">
       <div className="pp-pocket__header">
         <div className="pp-pocket__head-rule" />
         <div className="pp-pocket__title">{t('pocket.title')}</div>
-        <div className="pp-pocket__meta">
-          <span>{total === 1 ? t('pocket.count_one', { n: total }) : t('pocket.count_other', { n: total })}</span>
-          <span className="pp-pocket__meta-dot">·</span>
-          <span>{t('pocket.day', { n: days })}</span>
-        </div>
       </div>
 
-      {total === 0 ? (
+      {/* Tab strip */}
+      <div className="pp-tabs" role="tablist">
+        <button
+          role="tab"
+          aria-selected={props.tab === 'tide'}
+          className={`pp-tab${props.tab === 'tide' ? ' is-active' : ''}`}
+          onClick={() => props.onTab('tide')}
+        >
+          {t('pocket.tab_tide')}
+        </button>
+        <button
+          role="tab"
+          aria-selected={props.tab === 'mine'}
+          className={`pp-tab${props.tab === 'mine' ? ' is-active' : ''}`}
+          onClick={() => props.onTab('mine')}
+        >
+          {t('pocket.tab_mine')}
+          {props.stones.length > 0 && (
+            <span className="pp-tab__badge">{props.stones.length}</span>
+          )}
+        </button>
+      </div>
+
+      {/* Day strip — last 14 days, newest (today) on left. Horizontally
+          scrollable so you can swipe back through the week. */}
+      <div className="pp-daystrip">
+        {props.days.map((d) => {
+          const sel = d === props.selectedDay;
+          const isT = d === dayKey();
+          const mineN = props.mineDayCount.get(d) ?? 0;
+          const tideN = props.tideDayCount.get(d) ?? 0;
+          const activeCount = props.tab === 'mine' ? mineN : tideN;
+          const hasAny = props.tab === 'mine' ? mineN > 0 : tideN > 0;
+          return (
+            <button
+              key={d}
+              type="button"
+              className={`pp-day${sel ? ' is-selected' : ''}${isT ? ' is-today' : ''}${hasAny ? '' : ' is-empty'}`}
+              onClick={() => props.onSelectDay(d)}
+              aria-label={d}
+            >
+              <div className="pp-day__label">
+                {isT ? t('pocket.cal_today') : shortDay(d)}
+              </div>
+              <div className="pp-day__dot-wrap">
+                {hasAny ? (
+                  <span className="pp-day__count">{activeCount}</span>
+                ) : (
+                  <span className="pp-day__dot pp-day__dot--faint" />
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Grid */}
+      <div className="pp-pocket__grid">
+        {props.tab === 'mine' &&
+          mineToday.map(({ stone, idx }, gridI) => (
+            <button
+              key={stone.ts}
+              className={`pp-spec${gridI === 0 && isToday && props.todayDone ? ' is-today' : ''}`}
+              style={{ ['--bob-delay' as never]: bobDelay(stone.ts) }}
+              // onClick — pocket scrolls; pointerdown fires before tap/scroll
+              // disambiguation. See scroll-vs-click skill.
+              onClick={() => props.onOpenOwn(idx)}
+            >
+              <div className="pp-spec__id">{specimenId(idx)}{gridI === 0 && isToday && props.todayDone ? ` · ${t('pocket.today.label')}` : ''}</div>
+              <div className="pp-spec__photo">
+                <img src={stone.url} alt={stone.kind} loading="lazy" />
+              </div>
+              <div className="pp-spec__kind">{stone.kind}</div>
+              <div className="pp-spec__day">{formatDay(stone.day)}</div>
+            </button>
+          ))}
+        {props.tab === 'tide' &&
+          tideToday.map((entry, gridI) => {
+            const self = isSelfEntry(entry) || entry.userId === 'self';
+            const ownIdx = ownIndexByTs.get(entry.stone.ts);
+            return (
+              <button
+                key={`${entry.userId}-${entry.stone.ts}`}
+                className={`pp-spec${gridI === 0 && isToday ? ' is-today' : ''}${self ? ' is-self' : ''}`}
+                style={{ ['--bob-delay' as never]: bobDelay(entry.stone.ts) }}
+                onClick={() => {
+                  if (self && ownIdx != null) props.onOpenOwn(ownIdx);
+                  else props.onOpenTide(entry);
+                }}
+              >
+                <div className="pp-spec__id">
+                  {self ? t('pocket.you') : (entry.userName || '·')}
+                </div>
+                <div className="pp-spec__photo">
+                  <img src={entry.stone.url} alt={entry.stone.kind} loading="lazy" />
+                </div>
+                <div className="pp-spec__kind">{entry.stone.kind}</div>
+                <div className="pp-spec__day">{formatDay(entry.stone.day)}</div>
+              </button>
+            );
+          })}
+      </div>
+
+      {/* Empty states + footer */}
+      {props.tab === 'mine' && mineToday.length === 0 && (
         <div className="pp-pocket__empty">
           <div className="pp-pocket__empty-rule" />
-          <div className="pp-pocket__empty-title">{t('pocket.empty.line1')}</div>
-          <div className="pp-pocket__empty-sub">{t('pocket.empty.line2')}</div>
-          <button className="pp-pocket__back-btn" onPointerDown={(e) => { e.preventDefault(); onGoBeach(); }}>
+          <div className="pp-pocket__empty-title">
+            {isToday ? t('pocket.empty.line1') : t('pocket.mine_empty_day')}
+          </div>
+          {isToday && (
+            <div className="pp-pocket__empty-sub">{t('pocket.empty.line2')}</div>
+          )}
+          {isToday && !props.todayDone && (
+            <button className="pp-pocket__back-btn" onClick={props.onGoBeach}>
+              {t('pocket.beach')}
+            </button>
+          )}
+        </div>
+      )}
+      {props.tab === 'tide' && tideToday.length === 0 && props.tideLoaded && (
+        <div className="pp-pocket__empty">
+          <div className="pp-pocket__empty-rule" />
+          <div className="pp-pocket__empty-title">{t('pocket.tide_empty')}</div>
+          {isToday && !props.todayDone && (
+            <button className="pp-pocket__back-btn" onClick={props.onGoBeach}>
+              {t('pocket.beach')}
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="pp-pocket__footer">
+        {isToday && props.todayDone ? (
+          <CountdownLine />
+        ) : isToday && !props.todayDone ? (
+          <button className="pp-pocket__back-btn" onClick={props.onGoBeach}>
             {t('pocket.beach')}
           </button>
-        </div>
-      ) : (
-        <>
-          <div className="pp-pocket__grid">
-            {stones.map(({ stone, idx }, gridI) => (
-              <button
-                key={stone.ts}
-                className={`pp-spec${gridI === 0 && todayDone ? ' is-today' : ''}`}
-                style={{ ['--bob-delay' as never]: bobDelay(stone.ts) }}
-                onPointerDown={(e) => { e.preventDefault(); onOpen(idx); }}
-              >
-                <div className="pp-spec__id">{specimenId(idx)}{gridI === 0 && todayDone ? ` · ${t('pocket.today.label')}` : ''}</div>
-                <div className="pp-spec__photo">
-                  <img src={stone.url} alt={stone.kind} loading="lazy" />
-                </div>
-                <div className="pp-spec__kind">{stone.kind}</div>
-                <div className="pp-spec__day">{formatDay(stone.day)}</div>
-              </button>
-            ))}
-          </div>
-          <div className="pp-pocket__footer">
-            {todayDone ? (
-              <CountdownLine />
-            ) : (
-              <button className="pp-pocket__back-btn" onPointerDown={(e) => { e.preventDefault(); onGoBeach(); }}>
-                {t('pocket.beach')}
-              </button>
-            )}
-          </div>
-        </>
-      )}
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -367,10 +569,20 @@ function CountdownLine() {
 }
 
 // ─── Detail view ───────────────────────────────────────────────────────────
-function DetailView({ stone, idx, onClose }: { stone: Stone; idx: number; onClose: () => void }) {
+function DetailView({
+  stone,
+  idx,
+  author,
+  onClose,
+}: {
+  stone: Stone;
+  idx?: number;
+  author?: TideEntry;
+  onClose: () => void;
+}) {
   return (
     <div className="pp-detail" onPointerDown={(e) => { e.preventDefault(); onClose(); }}>
-      <div className="pp-detail__head">{specimenId(idx)}</div>
+      <div className="pp-detail__head">{idx != null ? specimenId(idx) : ''}</div>
       <div className="pp-detail__photo">
         <img src={stone.url} alt={stone.kind} />
       </div>
@@ -378,6 +590,11 @@ function DetailView({ stone, idx, onClose }: { stone: Stone; idx: number; onClos
         <div className="pp-detail__kind">{stone.kind}</div>
         <div className="pp-detail__mood">{stone.mood}</div>
         <div className="pp-detail__day">{formatDay(stone.day)}</div>
+        {author && !isSelfEntry(author) && author.userName && (
+          <div className="pp-detail__author">
+            {t('detail.by')} · {author.userName}
+          </div>
+        )}
       </div>
       <div className="pp-detail__hint">{t('detail.close')}</div>
     </div>
