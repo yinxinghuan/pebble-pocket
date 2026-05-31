@@ -619,10 +619,33 @@ function DetailView({
         <div className="pp-detail__kind">{stone.kind}</div>
         <div className="pp-detail__mood">{stone.mood}</div>
         <div className="pp-detail__day">{formatDay(stone.day)}</div>
-        {author && !isSelfEntry(author) && author.userName && (
-          <div className="pp-detail__author">
-            {t('detail.by')} · {author.userName}
-          </div>
+        {author && !isSelfEntry(author) && (
+          <button
+            type="button"
+            className="pp-detail__author"
+            // The parent .pp-detail closes on ANY pointerdown — stop both
+            // pointerdown and click bubbling so the chip can fire its own
+            // openAigramProfile without dismissing the detail first.
+            onPointerDown={(ev) => ev.stopPropagation()}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              if (isInAigram) openAigramProfile(author.userId);
+            }}
+            disabled={!isInAigram}
+            aria-label={`Open ${author.userName || 'user'}'s profile`}
+          >
+            <span className="pp-detail__author-label">{t('detail.by')} ·</span>
+            <span className="pp-detail__author-avatar" aria-hidden>
+              {author.userAvatarUrl ? (
+                <img src={author.userAvatarUrl} alt="" draggable={false} />
+              ) : (
+                <span className="pp-detail__author-letter">
+                  {(author.userName || '?')[0]?.toUpperCase()}
+                </span>
+              )}
+            </span>
+            <span className="pp-detail__author-name">{author.userName || '·'}</span>
+          </button>
         )}
       </div>
       <div className="pp-detail__hint">{t('detail.close')}</div>
