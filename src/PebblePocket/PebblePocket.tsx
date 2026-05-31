@@ -498,7 +498,22 @@ function PocketView(props: PocketProps) {
                 }}
               >
                 <div className="pp-spec__id">
-                  {self ? t('pocket.you') : (entry.userName || '·')}
+                  {self ? (
+                    <span className="pp-spec__name--self">{t('pocket.you')}</span>
+                  ) : (
+                    <>
+                      <span className="pp-spec__avatar" aria-hidden>
+                        {entry.userAvatarUrl ? (
+                          <img src={entry.userAvatarUrl} alt="" draggable={false} />
+                        ) : (
+                          <span className="pp-spec__avatar-letter">
+                            {(entry.userName || '?')[0]?.toUpperCase()}
+                          </span>
+                        )}
+                      </span>
+                      <span className="pp-spec__name">{entry.userName || '·'}</span>
+                    </>
+                  )}
                 </div>
                 <div className="pp-spec__photo">
                   <img src={entry.stone.url} alt={entry.stone.kind} loading="lazy" />

@@ -731,6 +731,44 @@
     color: @cream-faint;
     margin-bottom: 6px;
     padding-left: 2px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 14px;
+  }
+  &__avatar {
+    flex: 0 0 14px;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: @ink-mid;
+    border: 1px solid @rule;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  }
+  &__avatar-letter {
+    font-family: @mono;
+    font-size: 7px;
+    font-weight: 700;
+    color: @cream-dim;
+    letter-spacing: 0;
+  }
+  &__name {
+    color: @cream-dim;
+    text-transform: none;
+    letter-spacing: 0.06em;
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  &__name--self {
+    color: @warm;
+    letter-spacing: 0.32em;
   }
   &__photo {
     aspect-ratio: 1;
