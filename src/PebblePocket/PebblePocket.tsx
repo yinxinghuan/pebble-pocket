@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { isInAigram, openAigramProfile } from '@shared/runtime';
 import './PebblePocket.less';
 import { usePebbles, Stone } from './hooks/usePebbles';
 import { useTide, TideEntry, isSelfEntry } from './hooks/useTide';
@@ -501,7 +502,20 @@ function PocketView(props: PocketProps) {
                   {self ? (
                     <span className="pp-spec__name--self">{t('pocket.you')}</span>
                   ) : (
-                    <>
+                    <button
+                      type="button"
+                      className="pp-spec__author-chip"
+                      // Tap author chip → opens that user's Aigram profile.
+                      // stopPropagation so the parent card's onClick
+                      // (open stone detail) doesn't also fire. See
+                      // cross-user-profile-tap skill.
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        if (isInAigram) openAigramProfile(entry.userId);
+                      }}
+                      disabled={!isInAigram}
+                      aria-label={`Open ${entry.userName || 'user'}'s profile`}
+                    >
                       <span className="pp-spec__avatar" aria-hidden>
                         {entry.userAvatarUrl ? (
                           <img src={entry.userAvatarUrl} alt="" draggable={false} />
@@ -512,7 +526,7 @@ function PocketView(props: PocketProps) {
                         )}
                       </span>
                       <span className="pp-spec__name">{entry.userName || '·'}</span>
-                    </>
+                    </button>
                   )}
                 </div>
                 <div className="pp-spec__photo">
