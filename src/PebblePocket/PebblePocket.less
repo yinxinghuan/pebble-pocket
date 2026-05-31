@@ -902,6 +902,66 @@
     text-transform: uppercase;
     color: @cream-faint;
   }
+  // Author chip — tappable avatar + name that opens the picker's Aigram
+  // profile. stopPropagation in the handler keeps the parent .pp-detail
+  // close-on-anywhere-pointerdown from also firing.
+  &__author {
+    margin-top: 14px;
+    background: rgba(241,234,216,0.04);
+    border: 1px solid @rule;
+    border-radius: 999px;
+    padding: 8px 16px 8px 8px;
+    font-family: @mono;
+    font-size: 14px;
+    color: @cream;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    touch-action: manipulation;
+    transition: background 140ms ease, border-color 140ms ease;
+    &:active { transform: scale(0.97); }
+    &:hover { border-color: @warm-soft; background: rgba(232,154,79,0.07); }
+    &:disabled { cursor: default; opacity: 0.85; }
+  }
+  &__author-label {
+    font-family: @mono;
+    font-size: 9.5px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: @cream-dim;
+  }
+  &__author-avatar {
+    flex: 0 0 22px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: @ink-mid;
+    border: 1px solid @warm-soft;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  }
+  &__author-letter {
+    font-family: @mono;
+    font-size: 10px;
+    font-weight: 700;
+    color: @warm;
+  }
+  &__author-name {
+    font-family: @serif;
+    font-style: italic;
+    font-size: 16px;
+    color: @cream;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 180px;
+  }
   &__hint {
     position: absolute;
     bottom: max(28px, env(safe-area-inset-bottom));
