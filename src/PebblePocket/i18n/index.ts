@@ -33,8 +33,13 @@ const STR: Record<Locale, Record<string, string>> = {
     'pocket.you': 'YOU',
     'detail.close': 'tap anywhere to close',
     'detail.by': 'picked by',
+    'detail.kept_by': 'kept by',
     'status.stone': 'specimen',
     'status.stones': 'specimens',
+    'keep.btn': 'keep this pebble',
+    'keep.kept': 'kept',
+    'keep.toast': 'kept · just now',
+    'kept.section_title': 'kept from the tide',
   },
   zh: {
     'beach.title': '今日的石头',
@@ -68,8 +73,13 @@ const STR: Record<Locale, Record<string, string>> = {
     'pocket.you': '你',
     'detail.close': '点任意处关闭',
     'detail.by': '捡到的人',
+    'detail.kept_by': '留下的人',
     'status.stone': '颗',
     'status.stones': '颗',
+    'keep.btn': '留下这颗',
+    'keep.kept': '已留下',
+    'keep.toast': '已留下 · 刚才',
+    'kept.section_title': '潮水中留下的',
   },
 };
 

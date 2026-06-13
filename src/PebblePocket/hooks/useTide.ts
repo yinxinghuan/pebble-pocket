@@ -20,6 +20,15 @@ export interface TideEntry {
   stone: Stone;
 }
 
+// Someone who kept one of YOUR stones. Comes from scanning every user's
+// `kept[]` array for entries where `authorUserId === self`.
+export interface Keeper {
+  userId: string;
+  userName?: string;
+  userAvatarUrl?: string;
+  keptAt: number;
+}
+
 interface SaveRow {
   user_id: string;
   time?: string;
@@ -30,12 +39,17 @@ const DISPLAY_CAP = 100;
 
 export interface UseTide {
   entries: TideEntry[];
+  /** Map keyed by your own stone.ts → list of users who kept it. */
+  keepersByMyStoneTs: Map<number, Keeper[]>;
   loaded: boolean;
   refresh: () => void;
 }
 
 export function useTide(): UseTide {
   const [entries, setEntries] = useState<TideEntry[]>([]);
+  const [keepersByMyStoneTs, setKeepersByMyStoneTs] = useState<Map<number, Keeper[]>>(
+    new Map(),
+  );
   const [loaded, setLoaded] = useState(false);
   const [nonce, setNonce] = useState(0);
 
@@ -58,6 +72,8 @@ export function useTide(): UseTide {
 
         // Flatten ALL stones from each user's save row (not just [0]).
         const pairs: Array<{ userId: string; stone: Stone }> = [];
+        // Build keepers map for self's stones, keyed by my stone.ts.
+        const keepersMap = new Map<number, Keeper[]>();
         for (const row of rows) {
           if (!row.user_id || !row.resource_data) continue;
           try {
@@ -67,6 +83,24 @@ export function useTide(): UseTide {
                 pairs.push({ userId: String(row.user_id), stone: s });
               }
             }
+            // kept[] entries from THIS row where the original author is me.
+            // Don't count yourself if you somehow ended up in this row.
+            if (telegramId && String(row.user_id) !== String(telegramId)) {
+              for (const k of save.kept || []) {
+                if (
+                  k &&
+                  k.stoneTs &&
+                  String(k.authorUserId) === String(telegramId)
+                ) {
+                  const list = keepersMap.get(k.stoneTs) || [];
+                  list.push({
+                    userId: String(row.user_id),
+                    keptAt: k.keptAt || 0,
+                  });
+                  keepersMap.set(k.stoneTs, list);
+                }
+              }
+            }
           } catch {
             /* skip corrupt row */
           }
@@ -74,8 +108,13 @@ export function useTide(): UseTide {
         pairs.sort((a, b) => (b.stone.ts ?? 0) - (a.stone.ts ?? 0));
         const limited = pairs.slice(0, DISPLAY_CAP);
 
-        // Resolve each unique author's profile once.
-        const uniqueIds = Array.from(new Set(limited.map((p) => p.userId)));
+        // Resolve each unique user's profile once. Includes both tide entry
+        // authors AND keepers of self's stones — single fetch per id.
+        const idSet = new Set<string>(limited.map((p) => p.userId));
+        for (const list of keepersMap.values()) {
+          for (const k of list) idSet.add(k.userId);
+        }
+        const uniqueIds = Array.from(idSet);
         const profileEntries = await Promise.all(
           uniqueIds.map(async (uid) => {
             try {
@@ -107,8 +146,26 @@ export function useTide(): UseTide {
             };
           }),
         );
+        // Hydrate keepers with profile + sort newest-first.
+        const hydratedKeepers = new Map<number, Keeper[]>();
+        for (const [stoneTs, list] of keepersMap.entries()) {
+          const hydrated = list.map((k) => {
+            const p = profileMap.get(k.userId) || null;
+            return {
+              ...k,
+              userName: p?.name,
+              userAvatarUrl: p?.head_url,
+            };
+          });
+          hydrated.sort((a, b) => (b.keptAt || 0) - (a.keptAt || 0));
+          hydratedKeepers.set(stoneTs, hydrated);
+        }
+        setKeepersByMyStoneTs(hydratedKeepers);
       } catch {
-        if (!cancelled) setEntries([]);
+        if (!cancelled) {
+          setEntries([]);
+          setKeepersByMyStoneTs(new Map());
+        }
       } finally {
         if (!cancelled) setLoaded(true);
       }
@@ -118,7 +175,7 @@ export function useTide(): UseTide {
     };
   }, [nonce]);
 
-  return { entries, loaded, refresh };
+  return { entries, keepersByMyStoneTs, loaded, refresh };
 }
 
 export function isSelfEntry(entry: TideEntry): boolean {

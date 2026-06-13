@@ -973,3 +973,236 @@
     animation: pp-hint-pulse 2s ease-in-out infinite;
   }
 }
+
+// ── BEACHCOMBER (Keep / Kept-by / social rail) ──────────────────────────
+
+// Shell icon: inherits currentColor; filled / outline both supported.
+.pp-shell-icon {
+  display: inline-block;
+  vertical-align: middle;
+  flex: 0 0 auto;
+}
+
+// Keep button — bottom-center of DetailView when the stone belongs to
+// someone else. Outline shell → filled shell after keep.
+.pp-keep {
+  margin-top: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  background: rgba(241,234,216,0.04);
+  border: 1px solid @rule;
+  border-radius: 999px;
+  padding: 9px 18px 9px 14px;
+  color: @cream-dim;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  touch-action: manipulation;
+  font-family: @mono;
+  font-size: 10px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 100ms ease;
+  &:active { transform: scale(0.96); }
+  &:hover  { border-color: @warm-soft; }
+
+  &__label {
+    line-height: 1;
+  }
+
+  &.is-kept {
+    color: @warm;
+    border-color: @warm-soft;
+    background: @warm-bg;
+    animation: pp-keep-ping 600ms ease;
+  }
+}
+@keyframes pp-keep-ping {
+  0%   { box-shadow: 0 0 0 0 fade(@warm, 40%); }
+  100% { box-shadow: 0 0 0 16px fade(@warm, 0%); }
+}
+
+// Kept-by chip list (author-side, inside DetailView when viewing own stone)
+.pp-keepers {
+  margin-top: 18px;
+  max-width: 86vw;
+  display: flex; flex-direction: column;
+  align-items: center;
+  gap: 8px;
+
+  &__label {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: @warm;
+    font-family: @mono;
+    font-size: 9px;
+    letter-spacing: 0.36em;
+    text-transform: uppercase;
+  }
+  &__list {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+  }
+  &__chip {
+    background: rgba(241,234,216,0.04);
+    border: 1px solid @rule;
+    border-radius: 999px;
+    padding: 5px 12px 5px 5px;
+    color: @cream;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    touch-action: manipulation;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: @serif;
+    font-style: italic;
+    font-size: 13px;
+    transition: background 140ms ease, border-color 140ms ease;
+    &:active { transform: scale(0.96); }
+    &:hover  { border-color: @warm-soft; background: rgba(232,154,79,0.07); }
+    &:disabled { opacity: 0.85; cursor: default; }
+  }
+  &__avatar {
+    flex: 0 0 18px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: @ink-mid;
+    border: 1px solid @warm-soft;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  }
+  &__letter {
+    font-family: @mono;
+    font-size: 8.5px;
+    font-weight: 700;
+    color: @warm;
+  }
+  &__name {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+// "Kept from the tide" social rail above the Mine grid
+.pp-kept {
+  padding: 4px 18px 14px;
+  border-bottom: 1px solid @rule;
+  margin-bottom: 14px;
+
+  &__title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: @warm;
+    font-family: @mono;
+    font-size: 9px;
+    letter-spacing: 0.36em;
+    text-transform: uppercase;
+    padding: 0 2px 8px;
+  }
+  &__count {
+    color: @cream-dim;
+    margin-left: auto;
+    font-family: @mono;
+    font-size: 9px;
+    letter-spacing: 0.32em;
+  }
+  &__rail {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    padding: 4px 2px 6px;
+    -webkit-overflow-scrolling: touch;
+    &::-webkit-scrollbar { display: none; }
+  }
+  &__card {
+    flex: 0 0 86px;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    touch-action: manipulation;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    &:active { transform: scale(0.97); }
+  }
+  &__photo {
+    width: 86px; height: 86px;
+    background: @ink-card;
+    border: 1px solid @rule;
+    overflow: hidden;
+    img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  }
+  &__author {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+  }
+  &__avatar {
+    flex: 0 0 14px;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: @ink-mid;
+    border: 1px solid @rule;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  }
+  &__letter {
+    font-family: @mono;
+    font-size: 7px;
+    font-weight: 700;
+    color: @cream-dim;
+  }
+  &__name {
+    color: @cream-dim;
+    font-family: @serif;
+    font-style: italic;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+}
+
+// 🐚N badge on Mine cards when other users have kept your stone
+.pp-spec__kept-badge {
+  position: absolute;
+  top: 6px; right: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px 3px 5px;
+  border-radius: 999px;
+  background: rgba(8,6,4,0.78);
+  border: 1px solid @warm-soft;
+  color: @warm;
+  font-family: @mono;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  z-index: 1;
+}

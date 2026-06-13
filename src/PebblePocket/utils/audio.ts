@@ -127,6 +127,29 @@ function hapticTap() {
   } catch (_) { /* ignore */ }
 }
 
+// Keep action — small two-note descend with a soft cord-tied feel.
+// Higher than playPop, quieter than playBell, no decay overlap with playSwell.
+export function playKeep() {
+  if (!audioReady() || !actx || !master) return;
+  const t = actx.currentTime;
+  const playNote = (freq: number, when: number, dur: number, vol: number) => {
+    if (!actx || !master) return;
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type = 'triangle';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(vol, when + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    o.connect(g).connect(master);
+    o.start(when);
+    o.stop(when + dur + 0.02);
+  };
+  playNote(740, t,        0.22, 0.10);
+  playNote(523, t + 0.10, 0.34, 0.08);
+  trackVoice(460);
+}
+
 // Soft tide — louder swell on tap during stone detail
 export function playSwell() {
   if (!audioReady() || !actx || !master) return;

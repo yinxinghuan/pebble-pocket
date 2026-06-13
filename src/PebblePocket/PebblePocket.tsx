@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { isInAigram, openAigramProfile } from '@shared/runtime';
+import { isInAigram, openAigramProfile, telegramId, useGameEvent } from '@shared/runtime';
 import './PebblePocket.less';
-import { usePebbles, Stone } from './hooks/usePebbles';
-import { useTide, TideEntry, isSelfEntry } from './hooks/useTide';
-import { initAudio, playBell, playSwell, installGlobalTapFeedback } from './utils/audio';
+import { usePebbles, Stone, KeptStone, keepKey } from './hooks/usePebbles';
+import { useTide, TideEntry, Keeper, isSelfEntry } from './hooks/useTide';
+import { initAudio, playBell, playSwell, playKeep, installGlobalTapFeedback } from './utils/audio';
 import { dayKey, msUntilTomorrow, formatDay } from './utils/dayKey';
+import { hasAlreadyNotified, withinRateLimit, recordNotify } from './utils/notifyLog';
 import { t } from './i18n';
 
 type Phase = 'beach' | 'generating' | 'reveal' | 'pocket' | 'detail';
@@ -44,6 +45,7 @@ function shortDay(k: string): string {
 export default function PebblePocket() {
   const pebbles = usePebbles();
   const tide = useTide();
+  const events = useGameEvent();
   const [phase, setPhase] = useState<Phase>('beach');
   const [openStone, setOpenStone] = useState<{ stone: Stone; entry?: TideEntry; idx?: number } | null>(null);
   const [pressing, setPressing] = useState(false);
@@ -115,6 +117,70 @@ export default function PebblePocket() {
     setPhase('detail');
     playSwell();
   };
+
+  // Open a kept stone (one you previously kept from the tide). Synthesizes
+  // a TideEntry shape so DetailView's keep button + author chip still work
+  // — user can unkeep from here.
+  const openKeptStone = (k: KeptStone) => {
+    firstTouch();
+    const entry: TideEntry = {
+      userId: k.authorUserId,
+      userName: k.authorName,
+      userAvatarUrl: k.authorAvatarUrl,
+      stone: { url: k.url, kind: k.kind, mood: k.mood, day: k.day, ts: k.stoneTs },
+    };
+    setOpenStone({ stone: entry.stone, entry });
+    setPhase('detail');
+    playSwell();
+  };
+
+  // Keep a tide entry's stone → adds to local `kept[]` + notifies the author
+  // exactly once (self-guard + per-author 24h rate limit + per-dedupe-key
+  // once-only persistence). Unkeep is a local-only remove.
+  const onToggleKeep = (entry: TideEntry) => {
+    if (isSelfEntry(entry)) return;
+    const dedupe = keepKey(entry.userId, entry.stone.ts);
+    if (pebbles.isKept(entry.userId, entry.stone.ts)) {
+      pebbles.unkeepStone(entry.userId, entry.stone.ts);
+      return;
+    }
+    const isNew = pebbles.keepStone({
+      url: entry.stone.url,
+      kind: entry.stone.kind,
+      mood: entry.stone.mood,
+      day: entry.stone.day,
+      stoneTs: entry.stone.ts,
+      authorUserId: entry.userId,
+      authorName: entry.userName,
+      authorAvatarUrl: entry.userAvatarUrl,
+    });
+    if (!isNew) return;
+    playKeep();
+    // Self-guard + rate-limit + once-only-per-dedupe notify.
+    const isSelf = telegramId && String(entry.userId) === String(telegramId);
+    if (isSelf) return;
+    if (hasAlreadyNotified(dedupe)) return;
+    if (!withinRateLimit(entry.userId)) return;
+    if (!events.canEmit) return;
+    events.trigger(`keep:${dedupe}`, {
+      actions: [
+        {
+          type: 'notify',
+          target_user_id: entry.userId,
+          image: {
+            ref_url: entry.stone.url,
+            prompt: `a ${entry.stone.kind} pebble, ${entry.stone.mood}`,
+          },
+          message: {
+            template: `{sender_name} kept your ${entry.stone.kind}.`,
+            variables: ['sender_name'],
+          },
+        },
+      ],
+    });
+    recordNotify(entry.userId, dedupe);
+  };
+
   const closeDetail = () => {
     setOpenStone(null);
     setPhase('pocket');
@@ -194,6 +260,9 @@ export default function PebblePocket() {
           onOpenTide={openTideStone}
           onGoBeach={() => { firstTouch(); setPhase('beach'); }}
           todayDone={pebbles.todayDone}
+          kept={pebbles.kept}
+          onOpenKept={openKeptStone}
+          keepersByMyStoneTs={tide.keepersByMyStoneTs}
         />
       )}
 
@@ -203,6 +272,21 @@ export default function PebblePocket() {
           idx={openStone.idx}
           author={openStone.entry}
           onClose={closeDetail}
+          kept={
+            openStone.entry
+              ? pebbles.isKept(openStone.entry.userId, openStone.entry.stone.ts)
+              : false
+          }
+          onToggleKeep={
+            openStone.entry && !isSelfEntry(openStone.entry)
+              ? () => onToggleKeep(openStone.entry!)
+              : undefined
+          }
+          keepers={
+            openStone.idx != null
+              ? tide.keepersByMyStoneTs.get(openStone.stone.ts) || []
+              : []
+          }
         />
       )}
     </div>
@@ -383,6 +467,9 @@ interface PocketProps {
   onOpenTide: (entry: TideEntry) => void;
   onGoBeach: () => void;
   todayDone: boolean;
+  kept: KeptStone[];
+  onOpenKept: (k: KeptStone) => void;
+  keepersByMyStoneTs: Map<number, Keeper[]>;
 }
 function PocketView(props: PocketProps) {
   const isToday = props.selectedDay === dayKey();
@@ -464,26 +551,79 @@ function PocketView(props: PocketProps) {
         })}
       </div>
 
+      {/* Kept-from-the-tide social rail — Mine tab only, day-agnostic. */}
+      {props.tab === 'mine' && props.kept.length > 0 && (
+        <div className="pp-kept">
+          <div className="pp-kept__title">
+            <ShellIcon filled small />
+            <span>{t('kept.section_title')}</span>
+            <span className="pp-kept__count">{props.kept.length}</span>
+          </div>
+          <div className="pp-kept__rail">
+            {props.kept
+              .slice()
+              .reverse()
+              .map((k) => (
+                <button
+                  key={`${k.authorUserId}:${k.stoneTs}`}
+                  type="button"
+                  className="pp-kept__card"
+                  onClick={() => props.onOpenKept(k)}
+                  aria-label={`${k.authorName || 'someone'}'s ${k.kind}`}
+                >
+                  <div className="pp-kept__photo">
+                    <img src={k.url} alt={k.kind} loading="lazy" />
+                  </div>
+                  <div className="pp-kept__author">
+                    <span className="pp-kept__avatar" aria-hidden>
+                      {k.authorAvatarUrl ? (
+                        <img src={k.authorAvatarUrl} alt="" draggable={false} />
+                      ) : (
+                        <span className="pp-kept__letter">
+                          {(k.authorName || '?')[0]?.toUpperCase()}
+                        </span>
+                      )}
+                    </span>
+                    <span className="pp-kept__name">{k.authorName || '·'}</span>
+                  </div>
+                </button>
+              ))}
+          </div>
+        </div>
+      )}
+
       {/* Grid */}
       <div className="pp-pocket__grid">
         {props.tab === 'mine' &&
-          mineToday.map(({ stone, idx }, gridI) => (
-            <button
-              key={stone.ts}
-              className={`pp-spec${gridI === 0 && isToday && props.todayDone ? ' is-today' : ''}`}
-              style={{ ['--bob-delay' as never]: bobDelay(stone.ts) }}
-              // onClick — pocket scrolls; pointerdown fires before tap/scroll
-              // disambiguation. See scroll-vs-click skill.
-              onClick={() => props.onOpenOwn(idx)}
-            >
-              <div className="pp-spec__id">{specimenId(idx)}{gridI === 0 && isToday && props.todayDone ? ` · ${t('pocket.today.label')}` : ''}</div>
-              <div className="pp-spec__photo">
-                <img src={stone.url} alt={stone.kind} loading="lazy" />
-              </div>
-              <div className="pp-spec__kind">{stone.kind}</div>
-              <div className="pp-spec__day">{formatDay(stone.day)}</div>
-            </button>
-          ))}
+          mineToday.map(({ stone, idx }, gridI) => {
+            const keepers = props.keepersByMyStoneTs.get(stone.ts) || [];
+            return (
+              <button
+                key={stone.ts}
+                className={`pp-spec${gridI === 0 && isToday && props.todayDone ? ' is-today' : ''}`}
+                style={{ ['--bob-delay' as never]: bobDelay(stone.ts) }}
+                // onClick — pocket scrolls; pointerdown fires before tap/scroll
+                // disambiguation. See scroll-vs-click skill.
+                onClick={() => props.onOpenOwn(idx)}
+              >
+                <div className="pp-spec__id">{specimenId(idx)}{gridI === 0 && isToday && props.todayDone ? ` · ${t('pocket.today.label')}` : ''}</div>
+                <div className="pp-spec__photo">
+                  <img src={stone.url} alt={stone.kind} loading="lazy" />
+                  {keepers.length > 0 && (
+                    <span
+                      className="pp-spec__kept-badge"
+                      aria-label={`kept by ${keepers.length}`}
+                    >
+                      <ShellIcon filled small />
+                      <span>{keepers.length}</span>
+                    </span>
+                  )}
+                </div>
+                <div className="pp-spec__kind">{stone.kind}</div>
+                <div className="pp-spec__day">{formatDay(stone.day)}</div>
+              </button>
+            );
+          })}
         {props.tab === 'tide' &&
           tideToday.map((entry, gridI) => {
             const self = isSelfEntry(entry) || entry.userId === 'self';
@@ -603,12 +743,31 @@ function DetailView({
   idx,
   author,
   onClose,
+  kept,
+  onToggleKeep,
+  keepers,
 }: {
   stone: Stone;
   idx?: number;
   author?: TideEntry;
   onClose: () => void;
+  kept: boolean;
+  onToggleKeep?: () => void;
+  keepers: Keeper[];
 }) {
+  // 'kept · just now' toast only after a fresh keep tap (not when re-opening
+  // an already-kept stone). Resets after a few seconds.
+  const [justKept, setJustKept] = useState(false);
+  const wasKeptRef = useRef(kept);
+  useEffect(() => {
+    if (kept && !wasKeptRef.current) {
+      setJustKept(true);
+      const id = setTimeout(() => setJustKept(false), 2200);
+      return () => clearTimeout(id);
+    }
+    wasKeptRef.current = kept;
+  }, [kept]);
+
   return (
     <div className="pp-detail" onPointerDown={(e) => { e.preventDefault(); onClose(); }}>
       <div className="pp-detail__head">{idx != null ? specimenId(idx) : ''}</div>
@@ -648,7 +807,97 @@ function DetailView({
           </button>
         )}
       </div>
+
+      {/* Beachcomber Keep action — only on others' stones */}
+      {onToggleKeep && (
+        <button
+          type="button"
+          className={`pp-keep${kept ? ' is-kept' : ''}`}
+          onPointerDown={(ev) => ev.stopPropagation()}
+          onClick={(ev) => {
+            ev.stopPropagation();
+            onToggleKeep();
+          }}
+          aria-pressed={kept}
+        >
+          <ShellIcon filled={kept} />
+          <span className="pp-keep__label">
+            {justKept ? t('keep.toast') : kept ? t('keep.kept') : t('keep.btn')}
+          </span>
+        </button>
+      )}
+
+      {/* Author-side: who kept this stone? Only when viewing own stone. */}
+      {idx != null && keepers.length > 0 && (
+        <div
+          className="pp-keepers"
+          onPointerDown={(ev) => ev.stopPropagation()}
+        >
+          <div className="pp-keepers__label">
+            <ShellIcon filled small /> {t('detail.kept_by')}
+          </div>
+          <div className="pp-keepers__list">
+            {keepers.map((k) => (
+              <button
+                key={k.userId}
+                type="button"
+                className="pp-keepers__chip"
+                onPointerDown={(ev) => ev.stopPropagation()}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  if (isInAigram) openAigramProfile(k.userId);
+                }}
+                disabled={!isInAigram}
+                aria-label={`Open ${k.userName || 'user'}'s profile`}
+              >
+                <span className="pp-keepers__avatar" aria-hidden>
+                  {k.userAvatarUrl ? (
+                    <img src={k.userAvatarUrl} alt="" draggable={false} />
+                  ) : (
+                    <span className="pp-keepers__letter">
+                      {(k.userName || '?')[0]?.toUpperCase()}
+                    </span>
+                  )}
+                </span>
+                <span className="pp-keepers__name">{k.userName || '·'}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="pp-detail__hint">{t('detail.close')}</div>
     </div>
+  );
+}
+
+// Small shell icon used by Keep button + Kept-by label. Filled = active.
+function ShellIcon({ filled, small }: { filled?: boolean; small?: boolean }) {
+  const size = small ? 14 : 18;
+  return (
+    <svg
+      className="pp-shell-icon"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      {/* Scallop shell — fan-shaped outline with radial ribs */}
+      <path
+        d="M12 3 C 5.5 3 2 9 3 14 C 4 18 8 21 12 21 C 16 21 20 18 21 14 C 22 9 18.5 3 12 3 Z"
+        fill={filled ? 'currentColor' : 'none'}
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 3 L 12 21 M 7 4.5 L 9 20.2 M 17 4.5 L 15 20.2 M 4 8.5 L 5.5 20 M 20 8.5 L 18.5 20"
+        stroke={filled ? 'rgba(0,0,0,0.28)' : 'currentColor'}
+        strokeWidth="1"
+        strokeLinecap="round"
+        fill="none"
+        opacity={filled ? 1 : 0.55}
+      />
+    </svg>
   );
 }

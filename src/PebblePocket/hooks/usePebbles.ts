@@ -13,8 +13,29 @@ export interface Stone {
   mood: string;      // e.g. 'water-polished smooth'
 }
 
+// A stone you kept from someone else's tide entry. Snapshot of the original
+// (url/kind/mood + author profile at keep time) so the entry survives even if
+// the author deletes their save or changes name. Author profile re-hydrates
+// at render time when available.
+export interface KeptStone {
+  url: string;
+  kind: string;
+  mood: string;
+  day: string;              // the author's day key
+  stoneTs: number;          // author's stone.ts — half of the dedupe key
+  authorUserId: string;     // other half of the dedupe key
+  authorName?: string;
+  authorAvatarUrl?: string;
+  keptAt: number;           // unix ms when you kept it
+}
+
 export interface PebbleSave {
   stones: Stone[];
+  kept?: KeptStone[];
+}
+
+export function keepKey(authorUserId: string, stoneTs: number): string {
+  return `${authorUserId}:${stoneTs}`;
 }
 
 export type GenStage =
@@ -34,6 +55,11 @@ interface UsePebbles {
   generating: boolean;
   stage: GenStage;
   error: string | null;
+  // Beachcomber social layer — stones you've kept from others' tide entries.
+  kept: KeptStone[];
+  isKept: (authorUserId: string, stoneTs: number) => boolean;
+  keepStone: (k: Omit<KeptStone, 'keptAt'>) => boolean;  // returns true if it was a NEW keep (vs no-op)
+  unkeepStone: (authorUserId: string, stoneTs: number) => void;
 }
 
 export function usePebbles(): UsePebbles {
@@ -48,12 +74,14 @@ export function usePebbles(): UsePebbles {
   // We seed from savedData on initial load and from then on the local mirror
   // is the source of truth for the UI.
   const [stones, setStones] = useState<Stone[]>([]);
+  const [kept, setKept] = useState<KeptStone[]>([]);
   const seededRef = useRef(false);
 
   useEffect(() => {
     if (seededRef.current) return;
-    if (save.savedData?.stones) {
-      setStones(save.savedData.stones);
+    if (save.savedData) {
+      setStones(save.savedData.stones || []);
+      setKept(save.savedData.kept || []);
       seededRef.current = true;
     } else if (save.loaded) {
       seededRef.current = true;
@@ -101,11 +129,50 @@ export function usePebbles(): UsePebbles {
     if (!freshStone) return;
     setStones((prev) => {
       const next = [...prev, freshStone];
-      save.persist({ stones: next });
+      save.persist({ stones: next, kept });
       return next;
     });
     setFreshStone(null);
-  }, [freshStone, save]);
+  }, [freshStone, save, kept]);
+
+  const isKept = useCallback(
+    (authorUserId: string, stoneTs: number) => {
+      return kept.some(
+        (k) => k.authorUserId === authorUserId && k.stoneTs === stoneTs,
+      );
+    },
+    [kept],
+  );
+
+  const keepStone = useCallback(
+    (k: Omit<KeptStone, 'keptAt'>): boolean => {
+      if (kept.some((x) => x.authorUserId === k.authorUserId && x.stoneTs === k.stoneTs)) {
+        return false;
+      }
+      const entry: KeptStone = { ...k, keptAt: Date.now() };
+      setKept((prev) => {
+        const next = [...prev, entry];
+        save.persist({ stones, kept: next });
+        return next;
+      });
+      return true;
+    },
+    [kept, stones, save],
+  );
+
+  const unkeepStone = useCallback(
+    (authorUserId: string, stoneTs: number) => {
+      setKept((prev) => {
+        const next = prev.filter(
+          (x) => !(x.authorUserId === authorUserId && x.stoneTs === stoneTs),
+        );
+        if (next.length === prev.length) return prev;
+        save.persist({ stones, kept: next });
+        return next;
+      });
+    },
+    [stones, save],
+  );
 
   return {
     loaded: save.loaded,
@@ -117,5 +184,9 @@ export function usePebbles(): UsePebbles {
     generating,
     stage,
     error,
+    kept,
+    isKept,
+    keepStone,
+    unkeepStone,
   };
 }
