@@ -508,7 +508,9 @@
     overflow-x: hidden;
     padding: 12px 16px 16px;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    // minmax(0,…) not plain 1fr: a long username would otherwise blow one card's
+    // track wider than its sibling (a 1fr track's `auto` min grows to content).
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 18px 14px;
     align-content: start;
     touch-action: pan-y;
